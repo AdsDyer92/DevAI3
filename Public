@@ -1,0 +1,400 @@
+
+const specialistLibrary = {
+  planning: {
+    firms: ["DP9", "Turley", "Avison Young Planning"],
+    rationale: "Strong London planning, committee, and mixed-use / residential experience.",
+    scope: [
+      "Review site constraints, policy position, and likely planning route.",
+      "Prepare planning strategy and pre-application advice note.",
+      "Coordinate planning statement and submission package.",
+      "Advise on committee risk, objections, and negotiation points."
+    ]
+  },
+  architecture: {
+    firms: ["HTA Design", "Morris+Company", "Haworth Tompkins"],
+    rationale: "Contextual London housing and mixed-use design experience.",
+    scope: [
+      "Prepare concept massing options and preferred scheme layout.",
+      "Develop DAS and design narrative responsive to local context.",
+      "Coordinate consultant inputs into the evolving design.",
+      "Support planning visuals, drawings, and committee-facing material."
+    ]
+  },
+  transport: {
+    firms: ["Motion", "Vectos", "Stantec"],
+    rationale: "Transport, parking, servicing, and car-light London schemes.",
+    scope: [
+      "Review PTAL, parking strategy, servicing, and access constraints.",
+      "Prepare transport statement or assessment as required.",
+      "Advise on cycle parking, disabled bays, refuse, and servicing.",
+      "Support discussions with highways officers and TfL where relevant."
+    ]
+  },
+  daylight: {
+    firms: ["Point 2 Surveyors", "GIA", "Savills Daylight & Sunlight"],
+    rationale: "Commonly used on London daylight, sunlight, and neighbour-impact testing.",
+    scope: [
+      "Review surrounding receptors and likely BRE testing requirements.",
+      "Test daylight and sunlight effects on neighbours and proposed units.",
+      "Advise on design changes to reduce planning risk.",
+      "Prepare technical report for planning submission."
+    ]
+  },
+  cost: {
+    firms: ["Alinea", "Rider Levett Bucknall", "Turner & Townsend alinea"],
+    rationale: "Development-focused cost planning and option testing.",
+    scope: [
+      "Prepare elemental cost plan for the preferred option.",
+      "Test cost impact of height, façade, and basement / servicing moves.",
+      "Advise on risk allowances, abnormal items, and contingencies.",
+      "Support appraisal updates as the scheme evolves."
+    ]
+  },
+  viability: {
+    firms: ["BNP Paribas Real Estate", "Gerald Eve", "Cushman & Wakefield"],
+    rationale: "Affordable housing and planning viability experience.",
+    scope: [
+      "Prepare first-pass viability testing of the preferred option.",
+      "Model affordable housing and review mechanisms.",
+      "Support negotiation on viability-sensitive planning obligations.",
+      "Provide evidence to accompany planning and committee discussions."
+    ]
+  }
+};
+
+let latestAssessment = null;
+let latestCommittee = null;
+let latestPlanit = [];
+
+function money(value){ return "£" + Math.round(value).toLocaleString(); }
+function itemHtml(title, body, badge) {
+  return `<div class="item"><div class="top"><strong>${title}</strong>${badge || ""}</div><div class="small" style="margin-top:8px;">${body}</div></div>`;
+}
+function showPage(id){
+  document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
+  document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+  document.getElementById(id).classList.add("active");
+  document.querySelector(`[data-page="${id}"]`).classList.add("active");
+}
+function getPayload(){
+  return {
+    siteAddress: document.getElementById("address").value,
+    siteAreaValue: document.getElementById("area").value,
+    siteAreaUnit: document.getElementById("unit").value,
+    borough: "Southwark",
+    context: document.getElementById("context").value,
+    ptal: document.getElementById("ptal").value,
+    existingUse: document.getElementById("use").value,
+    heritage: document.getElementById("heritage").checked,
+    communityUse: document.getElementById("community").checked,
+    tallBuildingZone: document.getElementById("tall").checked,
+    floodRisk: document.getElementById("flood").checked,
+    protectedEmployment: document.getElementById("employment").checked
+  };
+}
+async function runAssessment(){
+  const res = await fetch("/api/assessment", {
+    method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(getPayload())
+  });
+  latestAssessment = await res.json();
+  document.getElementById("heightValue").textContent = `${latestAssessment.minHeight}-${latestAssessment.maxHeight} storeys`;
+  document.getElementById("densityValue").textContent = `${latestAssessment.lowDensity}-${latestAssessment.highDensity} u/ha`;
+  document.getElementById("homesValue").textContent = `${latestAssessment.lowHomes}-${latestAssessment.highHomes}`;
+  document.getElementById("parkingValue").textContent = `${latestAssessment.maxParking}`;
+  document.getElementById("amenityValue").textContent = `${latestAssessment.privateAmenity + latestAssessment.communalAmenity}`;
+  document.getElementById("rlvValue").textContent = money(latestAssessment.rlv);
+  document.getElementById("headlineText").textContent = latestAssessment.headline;
+  document.getElementById("dashboardParking").textContent = `${latestAssessment.maxParking} spaces maximum including about ${latestAssessment.disabledBays} disabled bay(s).`;
+  document.getElementById("dashboardAmenity").textContent = `${latestAssessment.privateAmenity} sqm private plus ${latestAssessment.communalAmenity} sqm communal.`;
+  document.getElementById("gdvText").textContent = money(latestAssessment.gdv);
+  document.getElementById("buildCostText").textContent = money(latestAssessment.buildCost);
+  document.getElementById("saleableText").textContent = `${latestAssessment.saleableArea} sqm`;
+  document.getElementById("rlvText").textContent = money(latestAssessment.rlv);
+  renderSensitivity();
+}
+async function runPlanit(){
+  const q = document.getElementById("address").value;
+  const res = await fetch(`/api/planit-search?q=${encodeURIComponent(q)}`);
+  const data = await res.json();
+  latestPlanit = data.items || [];
+  const wrap = document.getElementById("planitResults");
+  if (latestPlanit.length) {
+    wrap.innerHTML = latestPlanit.map(item => itemHtml(
+      item.uid || item.altid || "PlanIt application",
+      `${item.address || ""}<br>${item.description || ""}<br>${item.start_date || ""}<br><a href="${item.link}" target="_blank" rel="noreferrer">Open PlanIt record</a>`,
+      `<span class="badge ok">score ${item.score}</span>`
+    )).join("");
+  } else if (data.error) {
+    wrap.innerHTML = itemHtml("UK PlanIt returned an error", data.error, `<span class="badge warn">Error</span>`);
+  } else {
+    wrap.innerHTML = itemHtml("No Southwark matches found", "Try a more exact address, postcode, or planning reference.", `<span class="badge warn">No matches</span>`);
+  }
+}
+async function analyseCommittee(){
+  if (!latestAssessment) await runAssessment();
+  const res = await fetch("/api/committee-analyse", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({
+      das: document.getElementById("dasText").value,
+      decision: document.getElementById("decisionText").value,
+      minutes: document.getElementById("minutesText").value,
+      youtubeUrl: document.getElementById("youtubeUrl").value,
+      site: latestAssessment
+    })
+  });
+  latestCommittee = await res.json();
+  document.getElementById("committeeThemes").innerHTML = latestCommittee.themes.length
+    ? latestCommittee.themes.map(t => `<span class="badge">${t}</span>`).join(" ")
+    : `<span class="small">No strong themes detected yet.</span>`;
+  document.getElementById("committeeDecision").textContent = latestCommittee.decisionRoute;
+  document.getElementById("committeeRelevance").innerHTML = latestCommittee.relevance.map(x => `<li>${x}</li>`).join("");
+  document.getElementById("committeeMoves").innerHTML = latestCommittee.moves.map(x => `<li>${x}</li>`).join("");
+}
+function renderSensitivity(){
+  if (!latestAssessment) return;
+  const rows = [
+    ["Base case", latestAssessment.rlv],
+    ["-5% GDV", latestAssessment.rlv - (latestAssessment.gdv * 0.05)],
+    ["+5% build cost", latestAssessment.rlv - (latestAssessment.buildCost * 0.05)],
+    ["-5% GDV and +5% cost", latestAssessment.rlv - (latestAssessment.gdv * 0.05) - (latestAssessment.buildCost * 0.05)]
+  ];
+  document.getElementById("sensitivity").innerHTML = rows.map(r => `<li>${r[0]}: ${money(r[1])}</li>`).join("");
+}
+function renderProcurement(){
+  const discipline = document.getElementById("disciplineSelect").value;
+  const item = specialistLibrary[discipline];
+  document.getElementById("specialistMatches").innerHTML = `<p><strong>Why these firms:</strong> ${item.rationale}</p><ul class="list">${item.firms.map(f => `<li>${f}</li>`).join("")}</ul>`;
+  document.getElementById("specialistScope").innerHTML = `<p><strong>Draft scope for tailoring:</strong></p><ul class="list">${item.scope.map(s => `<li>${s}</li>`).join("")}</ul>`;
+}
+function downloadSummary(){
+  if (!latestAssessment) return;
+  const lines = [
+    "Southwark Development Decision Engine v2 summary",
+    `Height: ${latestAssessment.minHeight}-${latestAssessment.maxHeight} storeys`,
+    `Density: ${latestAssessment.lowDensity}-${latestAssessment.highDensity} u/ha`,
+    `Homes: ${latestAssessment.lowHomes}-${latestAssessment.highHomes}`,
+    `Parking: ${latestAssessment.maxParking} spaces`,
+    `Amenity: ${latestAssessment.privateAmenity + latestAssessment.communalAmenity} sqm`,
+    `GDV: ${money(latestAssessment.gdv)}`,
+    `Build cost: ${money(latestAssessment.buildCost)}`,
+    `Residual land value: ${money(latestAssessment.rlv)}`
+  ];
+  if (latestCommittee) lines.push("", `Committee themes: ${latestCommittee.themes.join(", ") || "None"}`, `Decision read-out: ${latestCommittee.decisionRoute}`);
+  const blob = new Blob([lines.join("\n")], { type:"text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "southwark-decision-engine-v2-summary.txt";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+async function runAll(){ await runAssessment(); await runPlanit(); await analyseCommittee(); }
+document.addEventListener("DOMContentLoaded", async () => { renderProcurement(); await runAssessment(); await runPlanit(); });
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Southwark Development Decision Engine v2</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <span class="eyebrow">Southwark-only • dashboard, map, appraisal, committee intelligence, procurement</span>
+      <h1>Southwark Development Decision Engine v2</h1>
+      <p>This version upgrades the live tool into a five-page workflow: Dashboard, Map & Comparables, Appraisal, Committee Intelligence, and Specialist Procurement.</p>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h2>Site inputs</h2>
+        <label>Southwark site address</label>
+        <input id="address" value="55 Nigel Road, SE15 4NP" />
+        <label>Site area</label>
+        <input id="area" type="number" step="0.001" value="0.391" />
+        <label>Area unit</label>
+        <select id="unit"><option value="acres">Acres</option><option value="ha">Hectares</option><option value="sqm">Sq m</option></select>
+        <label>Planning context</label>
+        <select id="context"><option value="urban">Urban residential</option><option value="town">Town centre / high street</option><option value="suburban">Suburban / low-rise</option><option value="growth">Growth area / opportunity area</option></select>
+        <label>Transport accessibility</label>
+        <select id="ptal"><option value="medium">Medium</option><option value="high">High</option><option value="very-high">Very high</option><option value="low">Low</option></select>
+        <label>Existing use</label>
+        <select id="use"><option value="community">Community</option><option value="residential">Residential</option><option value="commercial">Commercial</option><option value="industrial">Industrial</option><option value="other">Other</option></select>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">
+          <label><input id="heritage" type="checkbox"> Heritage</label>
+          <label><input id="community" type="checkbox" checked> Community use</label>
+          <label><input id="tall" type="checkbox"> Tall-building location</label>
+          <label><input id="flood" type="checkbox"> Flood-risk</label>
+          <label><input id="employment" type="checkbox"> Employment flag</label>
+        </div>
+        <div class="btns">
+          <button onclick="runAll()">Refresh engine</button>
+          <button class="secondary" onclick="downloadSummary()">Download summary</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="metrics">
+          <div class="metric"><div class="label">Suggested height</div><div class="value" id="heightValue">—</div><div class="subtext">contextual envelope</div></div>
+          <div class="metric"><div class="label">Recommended density</div><div class="value" id="densityValue">—</div><div class="subtext">units per hectare</div></div>
+          <div class="metric"><div class="label">Estimated homes</div><div class="value" id="homesValue">—</div><div class="subtext">target option</div></div>
+          <div class="metric"><div class="label">Parking</div><div class="value" id="parkingValue">—</div><div class="subtext">max spaces</div></div>
+          <div class="metric"><div class="label">Amenity</div><div class="value" id="amenityValue">—</div><div class="subtext">sqm total</div></div>
+          <div class="metric"><div class="label">Residual land value</div><div class="value" id="rlvValue">—</div><div class="subtext">first pass only</div></div>
+        </div>
+
+        <div class="tabs">
+          <button class="tab active" data-page="dashboard" onclick="showPage('dashboard')">Dashboard</button>
+          <button class="tab" data-page="map" onclick="showPage('map')">Map & Comparables</button>
+          <button class="tab" data-page="appraisal" onclick="showPage('appraisal')">Appraisal</button>
+          <button class="tab" data-page="committee" onclick="showPage('committee')">Committee Intelligence</button>
+          <button class="tab" data-page="procurement" onclick="showPage('procurement')">Procurement</button>
+        </div>
+
+        <div id="dashboard" class="page active">
+          <div class="card">
+            <h3>Recommended scheme position</h3>
+            <p id="headlineText"></p>
+            <p><strong>Parking:</strong> <span id="dashboardParking"></span></p>
+            <p><strong>Amenity:</strong> <span id="dashboardAmenity"></span></p>
+          </div>
+        </div>
+
+        <div id="map" class="page">
+          <div class="card">
+            <h3>Map & comparables</h3>
+            <div class="map-box">
+              <div><strong>Map placeholder</strong><br>Replace this in v3 with Mapbox or Leaflet and plot the live site plus Southwark comparables from UK PlanIt.</div>
+            </div>
+            <div id="planitResults"></div>
+          </div>
+        </div>
+
+        <div id="appraisal" class="page">
+          <div class="card">
+            <h3>Recommended option appraisal</h3>
+            <div class="three">
+              <div class="metric"><div class="label">GDV</div><div class="value" id="gdvText"></div></div>
+              <div class="metric"><div class="label">Build cost</div><div class="value" id="buildCostText"></div></div>
+              <div class="metric"><div class="label">Saleable area</div><div class="value" id="saleableText"></div></div>
+            </div>
+            <div class="soft" style="margin-top:16px;">
+              <strong>Sensitivity</strong>
+              <ul class="list" id="sensitivity"></ul>
+            </div>
+            <p class="small">Residual land value: <strong id="rlvText"></strong></p>
+          </div>
+        </div>
+
+        <div id="committee" class="page">
+          <div class="card">
+            <h3>Committee intelligence</h3>
+            <p class="small">Paste the DAS, decision notice, committee minutes, and optional YouTube URL. The engine will pull out key themes and relate them to the live site.</p>
+            <label>DAS text</label>
+            <textarea id="dasText">Paste DAS text here.</textarea>
+            <label>Decision notice text</label>
+            <textarea id="decisionText">Paste decision notice text here.</textarea>
+            <label>Committee minutes / webcast notes</label>
+            <textarea id="minutesText">Paste committee minutes or webcast notes here.</textarea>
+            <label>YouTube URL</label>
+            <input id="youtubeUrl" value="" placeholder="Optional webcast URL" />
+            <div class="btns"><button onclick="analyseCommittee()">Analyse committee material</button></div>
+            <div class="two" style="margin-top:16px;">
+              <div class="soft">
+                <strong>Detected themes</strong>
+                <div id="committeeThemes" style="margin-top:10px;"></div>
+                <p class="small" style="margin-top:12px;"><strong>Decision read-out:</strong> <span id="committeeDecision"></span></p>
+              </div>
+              <div class="soft">
+                <strong>How it relates to the live site</strong>
+                <ul class="list" id="committeeRelevance" style="margin-top:10px;"></ul>
+                <p class="small" style="margin-top:12px;"><strong>Suggested response moves</strong></p>
+                <ul class="list" id="committeeMoves"></ul>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="procurement" class="page">
+          <div class="card">
+            <h3>Specialist procurement</h3>
+            <div class="proc-grid">
+              <div>
+                <label>Discipline</label>
+                <select id="disciplineSelect" onchange="renderProcurement()">
+                  <option value="planning">Planning consultant</option>
+                  <option value="architecture">Architect</option>
+                  <option value="transport">Transport consultant</option>
+                  <option value="daylight">Daylight / sunlight consultant</option>
+                  <option value="cost">Cost consultant</option>
+                  <option value="viability">Viability consultant</option>
+                </select>
+              </div>
+              <div class="soft">
+                <strong>Southwark / Inner London fit</strong>
+                <p class="small">These are suggested starter firms and scopes. In a later version, rank them from comparable schemes and geographic experience.</p>
+              </div>
+            </div>
+            <div class="proc-grid" style="margin-top:16px;">
+              <div class="soft"><strong>Suggested specialists</strong><div id="specialistMatches"></div></div>
+              <div class="soft"><strong>Draft scope</strong><div id="specialistScope"></div></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>
+
+
+:root{
+  --bg:#f8fafc;--card:#fff;--text:#0f172a;--muted:#475569;--border:#e2e8f0;
+  --accent:#0f766e;--ok:#166534;--warn:#92400e;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text)}
+.wrap{max-width:1200px;margin:0 auto;padding:24px}
+.hero{margin-bottom:24px}
+.eyebrow{display:inline-block;padding:8px 12px;border-radius:999px;background:#fff;border:1px solid var(--border);font-size:13px;color:var(--muted)}
+h1{font-size:36px;line-height:1.1;margin:14px 0 10px}
+h2,h3{margin:0 0 10px}
+p{line-height:1.5;color:var(--muted)}
+.grid{display:grid;grid-template-columns:390px 1fr;gap:20px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:18px;box-shadow:0 2px 8px rgba(15,23,42,.04)}
+label{display:block;font-weight:bold;margin:12px 0 6px}
+input,select,textarea,button{width:100%;padding:12px;border-radius:10px;border:1px solid var(--border);font-size:16px}
+textarea{min-height:90px}
+button{background:var(--accent);color:#fff;border:none;cursor:pointer;font-weight:bold;margin-top:14px}
+button.secondary{background:#fff;color:var(--text);border:1px solid var(--border)}
+.btns{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.metrics{display:grid;grid-template-columns:repeat(6,1fr);gap:14px;margin-bottom:16px}
+.metric{background:#fff;border:1px solid var(--border);border-radius:14px;padding:16px}
+.metric .label{font-size:13px;color:var(--muted);margin-bottom:8px}
+.metric .value{font-size:22px;font-weight:bold}
+.metric .subtext{margin-top:6px;font-size:12px;color:var(--muted)}
+.tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.tab{padding:10px 14px;border-radius:999px;border:1px solid var(--border);background:#fff;color:var(--text);cursor:pointer}
+.tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.page{display:none}
+.page.active{display:block}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.three{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.item{border:1px solid var(--border);border-radius:14px;padding:14px;margin-top:12px}
+.top{display:flex;justify-content:space-between;gap:12px;align-items:center}
+.badge{display:inline-block;padding:6px 10px;border-radius:999px;font-size:12px;border:1px solid var(--border);background:#fff}
+.badge.ok{background:#ecfdf5;color:var(--ok);border-color:#bbf7d0}
+.badge.warn{background:#fff7ed;color:var(--warn);border-color:#fed7aa}
+.small{font-size:13px;color:var(--muted)}
+.list{padding-left:18px;color:var(--muted);margin:0}
+.map-box{height:320px;border:1px dashed var(--border);border-radius:16px;background:linear-gradient(180deg,#f8fafc,#eef2ff);display:flex;align-items:center;justify-content:center;color:var(--muted);text-align:center;padding:24px}
+.proc-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.soft{padding:12px;border:1px solid var(--border);border-radius:12px;background:#fafafa}
+@media (max-width:1100px){.metrics{grid-template-columns:repeat(3,1fr)}}
+@media (max-width:900px){.grid,.metrics,.two,.three,.proc-grid,.btns{grid-template-columns:1fr}}
